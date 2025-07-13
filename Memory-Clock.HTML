@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Memory Clock (PWA)</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#00ffaa" />
+  <link rel="icon" href="data:image/png;base64,iVBORw0KGgo=" />
+
+  <!-- Font -->
+  <link href="https://fonts.googleapis.com/css2?family=Fira+Code&display=swap" rel="stylesheet" />
+
+  <style>
+    :root {
+      --bg: linear-gradient(to bottom right, #1e1e1e, #2a2a50);
+      --text: #e0ffe0;
+      --button-bg: #00ffaa;
+      --button-text: #000;
+      --delete-bg: #ff4444;
+      --card-bg: rgba(255, 255, 255, 0.1);
+      --card-blur: 15px;
+    }
+
+    [data-theme="light"] {
+      --bg: linear-gradient(to bottom right, #ffffff, #e6f7ff);
+      --text: #222;
+      --button-bg: #008800;
+      --button-text: #fff;
+      --delete-bg: #cc0000;
+      --card-bg: rgba(255, 255, 255, 0.6);
+      --card-blur: 10px;
+    }
+
+    body {
+      font-family: 'Fira Code', monospace;
+      background: var(--bg);
+      color: var(--text);
+      margin: 0;
+      padding: 20px;
+      transition: background 0.4s ease, color 0.4s ease;
+    }
+
+    h1 {
+      text-align: center;
+      margin-bottom: 20px;
+    }
+
+    .top-controls {
+      position: absolute;
+      top: 15px;
+      right: 20px;
+      display: flex;
+      gap: 10px;
+    }
+
+    .theme-toggle,
+    .format-toggle {
+      background: var(--button-bg);
+      color: var(--button-text);
+      border: none;
+      padding: 8px 14px;
+      font-size: 0.9em;
+      border-radius: 10px;
+      cursor: pointer;
+    }
+
+    .form {
+      max-width: 600px;
+      margin: 0 auto 30px auto;
+      padding: 20px;
+      border-radius: 15px;
+      background: var(--card-bg);
+      backdrop-filter: blur(var(--card-blur));
+      box-shadow: 0 0 15px rgba(0, 255, 170, 0.3);
+    }
+
+    .form input[type="text"],
+    .form input[type="datetime-local"],
+    .form input[type="file"],
+    .form textarea,
+    .form button {
+      width: 100%;
+      padding: 10px;
+      margin: 8px 0;
+      border-radius: 10px;
+      border: none;
+      font-size: 1em;
+    }
+
+    .form input, .form textarea {
+      background: rgba(255,255,255,0.1);
+      color: var(--text);
+    }
+
+    .form button {
+      background-color: var(--button-bg);
+      color: var(--button-text);
+      font-weight: bold;
+      cursor: pointer;
+    }
+
+    .card {
+      background: var(--card-bg);
+      backdrop-filter: blur(var(--card-blur));
+      border-radius: 20px;
+      padding: 20px;
+      margin: 15px auto;
+      max-width: 600px;
+      text-align: center;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+      transition: transform 0.3s ease, box-shadow 0.3s ease;
+    }
+
+    .card:hover {
+      transform: scale(1.015);
+      box-shadow: 0 12px 30px rgba(0, 255, 170, 0.4);
+    }
+
+    .card img {
+      max-width: 100%;
+      max-height: 180px;
+      border-radius: 10px;
+      margin-bottom: 10px;
+      object-fit: cover;
+    }
+
+    .card-title {
+      font-size: 1.3em;
+      font-weight: bold;
+      margin-bottom: 6px;
+    }
+
+    .event-date, .timer, .remark {
+      margin: 5px 0;
+      font-size: 0.95em;
+    }
+
+    .progress-bar {
+      background: #bbb;
+      border-radius: 10px;
+      height: 10px;
+      overflow: hidden;
+      margin-top: 8px;
+    }
+
+    .progress-fill {
+      height: 10px;
+      background: limegreen;
+      transition: width 0.5s;
+    }
+
+    .progress-label {
+      font-size: 0.8em;
+      color: #aaa;
+    }
+
+    .delete-btn {
+      background: var(--delete-bg);
+      color: white;
+      border: none;
+      padding: 6px 12px;
+      font-size: 0.9em;
+      border-radius: 8px;
+      cursor: pointer;
+      margin-top: 10px;
+    }
+
+    @media (max-width: 600px) {
+      .form, .card {
+        padding: 15px;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="top-controls">
+    <button class="format-toggle" onclick="toggleFormat()">🕒 Format</button>
+    <button class="theme-toggle" onclick="toggleTheme()">🌗 Theme</button>
+  </div>
+
+  <h1>📸 Memory Clock</h1>
+
+  <div class="form">
+    <input type="text" id="eventName" placeholder="Event name..." />
+    <input type="datetime-local" id="eventDate" />
+    <input type="file" id="eventImage" accept="image/*" />
+    <textarea id="eventRemark" placeholder="Write a remark..." rows="2"></textarea>
+    <button onclick="addEvent()">Add Event</button>
+  </div>
+
+  <div id="eventList"></div>
+
+  <audio id="alarmSound" src="https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg" preload="auto"></audio>
+
+  <script>
+    // ========== FORMAT / THEME / STORAGE ==========
+    let events = JSON.parse(localStorage.getItem("events") || "[]");
+    const alarmSound = document.getElementById("alarmSound");
+
+    const theme = localStorage.getItem("theme") || "dark";
+    document.documentElement.setAttribute("data-theme", theme);
+
+    const formats = ["dd/mon/yyyy", "dd/mm/yyyy", "12hr", "24hr"];
+    let formatIndex = parseInt(localStorage.getItem("formatIndex") || "0");
+
+    function toggleFormat() {
+      formatIndex = (formatIndex + 1) % formats.length;
+      localStorage.setItem("formatIndex", formatIndex);
+      renderEvents();
+    }
+
+    function toggleTheme() {
+      const current = document.documentElement.getAttribute("data-theme");
+      const next = current === "light" ? "dark" : "light";
+      document.documentElement.setAttribute("data-theme", next);
+      localStorage.setItem("theme", next);
+    }
+
+    function formatDateTime(date) {
+      const day = String(date.getDate()).padStart(2, "0");
+      const month = date.getMonth();
+      const year = date.getFullYear();
+      const hours = date.getHours();
+      const mins = String(date.getMinutes()).padStart(2, "0");
+
+      const monthNames = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN",
+                          "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
+      const fullMonth = monthNames[month];
+      const twoDigitMonth = String(month + 1).padStart(2, "0");
+
+      switch (formats[formatIndex]) {
+        case "dd/mon/yyyy":
+          return `${day}/${fullMonth}/${year}`;
+        case "dd/mm/yyyy":
+          return `${day}/${twoDigitMonth}/${year}`;
+        case "12hr":
+          return date.toLocaleString("en-US", { hour: "numeric", minute: "numeric", hour12: true, day: "2-digit", month: "long", year: "numeric" });
+        case "24hr":
+        default:
+          return `${day}/${twoDigitMonth}/${year} ${String(hours).padStart(2, "0")}:${mins}`;
+      }
+    }
+
+    function formatTimeDiff(targetDate) {
+      const now = new Date();
+      const isPast = now > targetDate;
+      const diffMs = Math.abs(now - targetDate);
+
+      const totalSeconds = Math.floor(diffMs / 1000);
+      const seconds = totalSeconds % 60;
+      const totalMinutes = Math.floor(totalSeconds / 60);
+      const minutes = totalMinutes % 60;
+      const totalHours = Math.floor(totalMinutes / 60);
+      const hours = totalHours % 24;
+      const totalDays = Math.floor(totalHours / 24);
+      const days = totalDays % 30;
+      const totalMonths = Math.floor(totalDays / 30);
+      const months = totalMonths % 12;
+      const years = Math.floor(totalMonths / 12);
+
+      return `${isPast ? "Since" : "In"} ${years}y ${months}m ${days}d ${hours}h ${minutes}m ${seconds}s`;
+    }
+
+    function renderEvents() {
+      const list = document.getElementById("eventList");
+      list.innerHTML = "";
+      const now = new Date();
+
+      events.forEach((evt, index) => {
+        const targetDate = new Date(evt.date);
+        const timeString = formatTimeDiff(targetDate);
+        const displayDate = formatDateTime(targetDate);
+
+        let progressBar = "";
+        if (targetDate > now && evt.createdAt) {
+          const start = new Date(evt.createdAt);
+          const total = targetDate - start;
+          const passed = now - start;
+          const percent = Math.min(Math.max((passed / total) * 100, 0), 100);
+          progressBar = `
+            <div class="progress-bar">
+              <div class="progress-fill" style="width: ${percent.toFixed(1)}%;"></div>
+            </div>
+            <div class="progress-label">${percent.toFixed(1)}% time passed</div>
+          `;
+        }
+
+        const div = document.createElement("div");
+        div.className = "card";
+        div.innerHTML = `
+          ${evt.image ? `<img src="${evt.image}" alt="Event Image" />` : ""}
+          <div class="card-title">${evt.name}</div>
+          <div class="event-date">📅 ${displayDate}</div>
+          <div class="remark">📝 ${evt.remark || "No remark"}</div>
+          <div class="timer">⏱ ${timeString}</div>
+          ${progressBar}
+          <button class="delete-btn" onclick="deleteEvent(${index})">Delete</button>
+        `;
+        list.appendChild(div);
+      });
+    }
+
+    function updateTimers() {
+      const now = new Date();
+      events.forEach((evt, index) => {
+        const target = new Date(evt.date);
+        if (!evt.notified && Math.abs(now - target) < 1000) {
+          evt.notified = true;
+          alarmSound.play();
+          alert(`⏰ Event "${evt.name}" triggered!\nRemark: ${evt.remark || "None"}`);
+          localStorage.setItem("events", JSON.stringify(events));
+        }
+      });
+      renderEvents();
+    }
+
+    function addEvent() {
+      const name = document.getElementById("eventName").value.trim();
+      const dateStr = document.getElementById("eventDate").value;
+      const remark = document.getElementById("eventRemark").value.trim();
+      const imageInput = document.getElementById("eventImage");
+
+      if (!name || !dateStr) {
+        alert("Please enter both name and date.");
+        return;
+      }
+
+      const createdAt = new Date().toISOString();
+      const reader = new FileReader();
+      reader.onload = function () {
+        const imageData = reader.result;
+        events.push({ name, date: dateStr, remark, image: imageData, notified: false, createdAt });
+        localStorage.setItem("events", JSON.stringify(events));
+        renderEvents();
+        clearInputs();
+      };
+
+      if (imageInput.files[0]) {
+        reader.readAsDataURL(imageInput.files[0]);
+      } else {
+        events.push({ name, date: dateStr, remark, image: "", notified: false, createdAt });
+        localStorage.setItem("events", JSON.stringify(events));
+        renderEvents();
+        clearInputs();
+      }
+    }
+
+    function clearInputs() {
+      document.getElementById("eventName").value = "";
+      document.getElementById("eventDate").value = "";
+      document.getElementById("eventImage").value = "";
+      document.getElementById("eventRemark").value = "";
+    }
+
+    function deleteEvent(index) {
+      if (confirm("Delete this event?")) {
+        events.splice(index, 1);
+        localStorage.setItem("events", JSON.stringify(events));
+        renderEvents();
+      }
+    }
+
+    renderEvents();
+    setInterval(updateTimers, 1000);
+
+    // ========== SERVICE WORKER + PWA manifest in JS ==========
+    if ('serviceWorker' in navigator) {
+      const swBlob = new Blob([`
+        const CACHE_NAME = "memory-clock-v1";
+        const FILES = [location.pathname];
+        self.addEventListener("install", e => e.waitUntil(caches.open(CACHE_NAME).then(c => c.addAll(FILES))));
+        self.addEventListener("fetch", e => e.respondWith(caches.match(e.request).then(r => r || fetch(e.request))));
+      `], { type: 'application/javascript' });
+      navigator.serviceWorker.register(URL.createObjectURL(swBlob));
+    }
+
+    const manifestBlob = new Blob([JSON.stringify({
+      name: "Memory Clock",
+      short_name: "MemoryClock",
+      start_url: ".",
+      display: "standalone",
+      background_color: "#1e1e1e",
+      theme_color: "#00ffaa",
+      icons: [{
+        src: "https://cdn-icons-png.flaticon.com/512/61/61456.png",
+        sizes: "192x192",
+        type: "image/png"
+      }]
+    })], { type: 'application/json' });
+    const manifestURL = URL.createObjectURL(manifestBlob);
+    const link = document.createElement('link');
+    link.rel = 'manifest';
+    link.href = manifestURL;
+    document.head.appendChild(link);
+  </script>
+</body>
+</html>
